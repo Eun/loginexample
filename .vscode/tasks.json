@@ -1,0 +1,22 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "taskName": "build",
+            "type": "shell",
+            "command": "go build github.com/Eun/loginexample/cmd/loginexample",
+            "problemMatcher": [
+                "$go"
+            ],
+            "dependsOn": "build-api"
+        },
+        {
+            "taskName": "build-api",
+            "type": "shell",
+            "command": "go run _gogenapi/build.go",
+            "problemMatcher": [
+                "$go"
+            ]
+        }
+    ]
+}
