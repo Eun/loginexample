@@ -8,8 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Eun/loginexample/gogenapi/token"
-	"github.com/Eun/loginexample/gogenapi/user"
+	"github.com/Eun/loginexample/gogenapi"
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -32,19 +31,19 @@ func main() {
 	// setup the apis
 	// each api should use the same database
 	// you could also specify other databaeses here
-	userAPI := user.New(db)
-	tokenAPI := token.New(db)
+	userAPI := gogenapi.NewUserAPI(db)
+	tokenAPI := gogenapi.NewTokenAPI(db)
 
 	// now you can use the api, e.g:
 	// userAPI.Get(user.User{Name: "Joe"})
 
 	// setup the REST API
-	userRESTAPI := user.NewRestAPI(router.PathPrefix("/user").Subrouter(), userAPI)
-	adminRESTAPI := user.NewRestAPI(router.PathPrefix("/admin").Subrouter(), userAPI)
+	userRESTAPI := gogenapi.NewUserRestAPI(router.PathPrefix("/user").Subrouter(), userAPI)
+	adminRESTAPI := gogenapi.NewTokenRestAPI(router.PathPrefix("/admin").Subrouter(), tokenAPI)
 
 	// We setup some hooks
 	// Creation is only allowed with valid fields
-	userRESTAPI.Hooks.PreCreate = func(r *http.Request, user *user.User) error {
+	userRESTAPI.Hooks.PreCreate = func(r *http.Request, user *gogenapi.User) error {
 		if user.Name == nil || len(*user.Name) <= 0 {
 			return errors.New("Invalid Name")
 		}
@@ -62,13 +61,13 @@ func main() {
 	}
 
 	// Deletion is only allowed if you are logged in
-	userRESTAPI.Hooks.PreDelete = func(r *http.Request, user *user.User) error {
+	userRESTAPI.Hooks.PreDelete = func(r *http.Request, user *gogenapi.User) error {
 		tokenID, err := strconv.ParseInt(r.Header.Get("Token"), 10, 64)
 		if err != nil {
 			return errors.New("Access Denied")
 		}
 
-		if _, err := tokenAPI.GetFirst(token.Token{ID: &tokenID, UserID: user.ID}); err != nil {
+		if _, err := tokenAPI.GetFirst(gogenapi.Token{ID: &tokenID, UserID: user.ID}); err != nil {
 			return errors.New("Access Denied")
 		}
 		// we will only find the user via its id
@@ -78,7 +77,7 @@ func main() {
 			log.Println(err)
 			return errors.New("An unexpected error occured")
 		}
-		if err := tokenAPI.Delete(token.Token{ID: &tokenID}); err != nil {
+		if err := tokenAPI.Delete(gogenapi.Token{ID: &tokenID}); err != nil {
 			log.Println(err)
 			return errors.New("An unexpected error occured")
 		}
@@ -86,13 +85,13 @@ func main() {
 	}
 
 	// Update is only allowed if you are logged in
-	userRESTAPI.Hooks.PreUpdate = func(r *http.Request, findUser *user.User, updateUser *user.User) error {
+	userRESTAPI.Hooks.PreUpdate = func(r *http.Request, findUser *gogenapi.User, updateUser *gogenapi.User) error {
 		tokenID, err := strconv.ParseInt(r.Header.Get("Token"), 10, 64)
 		if err != nil {
 			return errors.New("Access Denied")
 		}
 
-		if _, err := tokenAPI.GetFirst(token.Token{ID: &tokenID, UserID: findUser.ID}); err != nil {
+		if _, err := tokenAPI.GetFirst(gogenapi.Token{ID: &tokenID, UserID: findUser.ID}); err != nil {
 			return errors.New("Access Denied")
 		}
 		// we will only find the user via its id
@@ -105,13 +104,13 @@ func main() {
 	}
 
 	// only allow to get their own data
-	userRESTAPI.Hooks.PreGet = func(r *http.Request, user *user.User) error {
+	userRESTAPI.Hooks.PreGet = func(r *http.Request, user *gogenapi.User) error {
 		tokenID, err := strconv.ParseInt(r.Header.Get("Token"), 10, 64)
 		if err != nil {
 			return errors.New("Access Denied")
 		}
 
-		token, err := tokenAPI.GetFirst(token.Token{ID: &tokenID})
+		token, err := tokenAPI.GetFirst(gogenapi.Token{ID: &tokenID})
 		if err != nil {
 			return errors.New("Access Denied")
 		}
@@ -121,7 +120,7 @@ func main() {
 		return nil
 	}
 
-	userRESTAPI.Hooks.GetResponse = func(r *http.Request, users []user.User) (interface{}, error) {
+	userRESTAPI.Hooks.GetResponse = func(r *http.Request, users []gogenapi.User) (interface{}, error) {
 		// the simple way would be to strip the password this way:
 		/*
 			for i := len(users) - 1; i >= 0; i-- {
@@ -141,7 +140,7 @@ func main() {
 	}
 
 	// setup a login function
-	userRESTAPI.HandleFunc("/login", func(r *http.Request, user *user.User) (interface{}, error) {
+	userRESTAPI.HandleFunc("/login", func(r *http.Request, user *gogenapi.User) (interface{}, error) {
 		if user.Name == nil || len(*user.Name) <= 0 {
 			return nil, errors.New("Access Denied")
 		}
@@ -158,7 +157,7 @@ func main() {
 			log.Println(err)
 			return nil, errors.New("An unexpected error occured")
 		}
-		err = tokenAPI.Create(token.Token{ID: tokenID, UserID: loggedInUser.ID})
+		err = tokenAPI.Create(gogenapi.Token{ID: tokenID, UserID: loggedInUser.ID})
 		if err != nil {
 			log.Println(err)
 			return nil, errors.New("An unexpected error occured")
@@ -169,23 +168,23 @@ func main() {
 	})
 
 	// setup a logout function
-	userRESTAPI.HandleFunc("/logout", func(r *http.Request, user *user.User) (interface{}, error) {
+	userRESTAPI.HandleFunc("/logout", func(r *http.Request, user *gogenapi.User) (interface{}, error) {
 		tokenID, err := strconv.ParseInt(r.Header.Get("Token"), 10, 64)
 		if err != nil {
 			return nil, errors.New("Access Denied")
 		}
 
-		if _, err := tokenAPI.GetFirst(token.Token{ID: &tokenID}); err != nil {
+		if _, err := tokenAPI.GetFirst(gogenapi.Token{ID: &tokenID}); err != nil {
 			return nil, errors.New("Access Denied")
 		}
-		if err := tokenAPI.Delete(token.Token{ID: &tokenID}); err != nil {
+		if err := tokenAPI.Delete(gogenapi.Token{ID: &tokenID}); err != nil {
 			return nil, errors.New("An unexpected error occured")
 		}
 		return nil, nil
 	})
 
 	// there is no create for admin
-	adminRESTAPI.Hooks.PreCreate = func(r *http.Request, user *user.User) error {
+	adminRESTAPI.Hooks.PreCreate = func(r *http.Request, token *gogenapi.Token) error {
 		return errors.New("Access Denied")
 	}
 
@@ -197,10 +196,10 @@ func main() {
 
 // In production you should something else,
 // use something like LastInsertRowID or similar
-func getFreeUserID(userAPI *user.UserAPI) (*int64, error) {
+func getFreeUserID(userAPI *gogenapi.UserAPI) (*int64, error) {
 	for {
 		id := time.Now().Unix()
-		users, err := userAPI.Get(user.User{ID: &id})
+		users, err := userAPI.Get(gogenapi.User{ID: &id})
 		if err != nil {
 			return nil, err
 		}
@@ -212,10 +211,10 @@ func getFreeUserID(userAPI *user.UserAPI) (*int64, error) {
 
 // In production you should something else,
 // use something like LastInsertRowID or similar
-func getFreeTokenID(tokenAPI *token.TokenAPI) (*int64, error) {
+func getFreeTokenID(tokenAPI *gogenapi.TokenAPI) (*int64, error) {
 	for {
 		id := time.Now().Unix()
-		tokens, err := tokenAPI.Get(token.Token{ID: &id})
+		tokens, err := tokenAPI.Get(gogenapi.Token{ID: &id})
 		if err != nil {
 			return nil, err
 		}
